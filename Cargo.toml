@@ -1,0 +1,11 @@
+[package]
+name = "multicriteria-dijkstra"
+description = "A generic multicriteria Dijkstra."
+authors = ["Sebastian Schmidt <sebastian.schmidt@helsinki.fi>"]
+repository = "https://github.com/sebschmi/multicriteria-dijkstra"
+license = "BSD-2-Clause"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+thiserror = "2.0.21"
