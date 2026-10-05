@@ -1,11 +1,9 @@
-use std::marker::PhantomData;
-
 use crate::{
     error::Error,
     node::MulticriteriaDijkstraNode,
     prune_list::{
         IndexedNode, MulticriteriaDijkstraPruneList, NodeWithIsTarget, NodeWithOptionalPredecessor,
-        NodeWithPredecessorAndIsTarget,
+        NodeWithOptionalPredecessorAndIsTarget,
     },
 };
 
@@ -15,14 +13,13 @@ pub mod prune_list;
 #[cfg(test)]
 mod tests;
 
-pub struct MulticriteriaDijkstra<PruneList, Context: MulticriteriaDijkstraContext> {
-    datastructures: MulticriteriaDijkstraDatastructures<PruneList, Context::Node>,
+pub struct MulticriteriaDijkstra<PruneList, Context> {
+    datastructures: MulticriteriaDijkstraDatastructures<PruneList>,
     context: Context,
 }
 
-pub struct MulticriteriaDijkstraDatastructures<PruneList, Node> {
+pub struct MulticriteriaDijkstraDatastructures<PruneList> {
     prune_list: PruneList,
-    phantom_data: PhantomData<Node>,
 }
 
 pub trait MulticriteriaDijkstraContext {
@@ -33,15 +30,16 @@ pub trait MulticriteriaDijkstraContext {
     fn generate_successors<Index: Copy>(
         &self,
         node: IndexedNode<Self::Node, Index>,
-        output: &mut impl Extend<NodeWithPredecessorAndIsTarget<Self::Node, Index>>,
+        output: &mut impl Extend<NodeWithOptionalPredecessorAndIsTarget<Self::Node, Index>>,
     );
 
     fn is_target(&self, node: &Self::Node) -> bool;
 }
 
 impl<
-    PruneList: MulticriteriaDijkstraPruneList<Context::Node>,
-    Context: MulticriteriaDijkstraContext,
+    Node: MulticriteriaDijkstraNode,
+    PruneList: MulticriteriaDijkstraPruneList<Node = Node>,
+    Context: MulticriteriaDijkstraContext<Node = Node>,
 > MulticriteriaDijkstra<PruneList, Context>
 {
     pub fn new(context: Context) -> Self {
@@ -52,7 +50,7 @@ impl<
     }
 
     pub fn from_datastructures(
-        datastructures: MulticriteriaDijkstraDatastructures<PruneList, Context::Node>,
+        datastructures: MulticriteriaDijkstraDatastructures<PruneList>,
         context: Context,
     ) -> Self {
         Self {
@@ -61,9 +59,7 @@ impl<
         }
     }
 
-    pub fn into_datastructures(
-        self,
-    ) -> MulticriteriaDijkstraDatastructures<PruneList, Context::Node> {
+    pub fn into_datastructures(self) -> MulticriteriaDijkstraDatastructures<PruneList> {
         self.datastructures
     }
 
@@ -90,6 +86,18 @@ impl<
             self.context
                 .generate_successors(indexed_node.cloned(), &mut self.datastructures.prune_list);
         }
+    }
+
+    pub fn iter_costs<'this>(
+        &'this self,
+        identifier: &<Context::Node as MulticriteriaDijkstraNode>::Identifier,
+    ) -> impl Iterator<Item = &'this <Context::Node as MulticriteriaDijkstraNode>::Cost>
+    where
+        Node: 'this,
+    {
+        self.datastructures
+            .prune_list
+            .iter_costs_at_identifier(identifier)
     }
 
     pub fn backtrack<'this>(
@@ -127,6 +135,7 @@ impl<
                 optional_predecessor_index = new_optional_predecessor_index;
             }
 
+            path.reverse();
             paths.push(path);
         }
 
@@ -134,21 +143,18 @@ impl<
     }
 }
 
-impl<PruneList: MulticriteriaDijkstraPruneList<Node>, Node: MulticriteriaDijkstraNode>
-    MulticriteriaDijkstraDatastructures<PruneList, Node>
-{
+impl<PruneList: MulticriteriaDijkstraPruneList> MulticriteriaDijkstraDatastructures<PruneList> {
     pub fn reset(&mut self) {
         self.prune_list.clear();
     }
 }
 
-impl<PruneList: MulticriteriaDijkstraPruneList<Node>, Node: MulticriteriaDijkstraNode> Default
-    for MulticriteriaDijkstraDatastructures<PruneList, Node>
+impl<PruneList: MulticriteriaDijkstraPruneList> Default
+    for MulticriteriaDijkstraDatastructures<PruneList>
 {
     fn default() -> Self {
         Self {
             prune_list: PruneList::default(),
-            phantom_data: PhantomData,
         }
     }
 }
