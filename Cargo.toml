@@ -4,7 +4,7 @@ description = "A generic multicriteria Dijkstra."
 authors = ["Sebastian Schmidt <sebastian.schmidt@helsinki.fi>"]
 repository = "https://github.com/sebschmi/multicriteria-dijkstra"
 license = "BSD-2-Clause"
-version = "0.1.0"
+version = "0.1.1"
 edition = "2024"
 
 [dependencies]
