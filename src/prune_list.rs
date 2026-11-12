@@ -7,6 +7,9 @@ use crate::node::MulticriteriaDijkstraNode;
 /// To avoid searching the whole search space, nodes are pruned based on two rules.
 /// * If a node with the same identifier dominates a node, then the dominated node is pruned.
 /// * If a node is dominated by any other node that represents a target, then the node is pruned.
+/// 
+/// The `is_target` flag of nodes must be dependent only on the identifier of the node.
+/// In other words, two nodes with the same identifier must have the same `is_target` value.
 pub trait MulticriteriaDijkstraPruneList:
     Default
     + Extend<NodeWithOptionalPredecessorAndIsTarget<Self::Node, Self::Index>>
