@@ -475,7 +475,7 @@ fn search_with_prune_condition_never_pruning_equals_search() {
 }
 
 #[test]
-fn search_until_cost_limit() {
+fn search_until_cost_limit_exact() {
     let context = Context {
         sequence_a: b"GGGG".to_vec(),
         sequence_b: b"TTTT".to_vec(),
@@ -491,6 +491,44 @@ fn search_until_cost_limit() {
     };
     let actual_costs: Vec<_> = dijkstra.iter_costs(&target_identifier).cloned().collect();
     assert_eq!(actual_costs, std::slice::from_ref(&cost_limit));
+
+    // No node exceeding the limit was inserted.
+    assert!(
+        dijkstra
+            .prune_list()
+            .nodes
+            .iter()
+            .all(|node| node.node.cost.dominates(&cost_limit))
+    );
+}
+
+#[test]
+fn search_until_cost_limit_inexact() {
+    let context = Context {
+        sequence_a: b"GGGG".to_vec(),
+        sequence_b: b"TTTT".to_vec(),
+    };
+    let cost_limit = Cost {
+        hops: usize::MAX,
+        cost: 10,
+    };
+    let mut dijkstra = MulticriteriaDijkstra::<PruneList, _>::new(context);
+    dijkstra.search_until_cost_limit(&cost_limit);
+
+    // Of the Pareto front (4, 12), (5, 11), (6, 10), (7, 9), (8, 8), only (6, 10) is within the limit.
+    let target_identifier = Identifier {
+        position_a: 4,
+        position_b: 4,
+    };
+    let mut actual_costs: Vec<_> = dijkstra.iter_costs(&target_identifier).cloned().collect();
+    let mut expected_costs = [
+        Cost { hops: 6, cost: 10 },
+        Cost { hops: 7, cost: 9 },
+        Cost { hops: 8, cost: 8 },
+    ];
+    actual_costs.sort_unstable();
+    expected_costs.sort_unstable();
+    assert_eq!(actual_costs, expected_costs);
 
     // No node exceeding the limit was inserted.
     assert!(
