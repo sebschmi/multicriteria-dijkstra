@@ -1,6 +1,6 @@
 use crate::{
     error::Error,
-    node::MulticriteriaDijkstraNode,
+    node::{MulticriteriaDijkstraCost, MulticriteriaDijkstraNode},
     prune_list::{
         IndexedNode, MulticriteriaDijkstraPruneList, NodeWithIsTarget, NodeWithOptionalPredecessor,
         NodeWithOptionalPredecessorAndIsTarget,
@@ -76,16 +76,58 @@ impl<
         context_resetter(&mut self.context);
     }
 
-    pub fn search(&mut self) {
-        // Initialise with root nodes.
-        self.context
-            .generate_root_nodes(&mut self.datastructures.prune_list);
+    pub fn prune_list(&self) -> &PruneList {
+        &self.datastructures.prune_list
+    }
 
-        while let Some(indexed_node) = self.datastructures.prune_list.next() {
+    pub fn prune_list_mut(&mut self) -> &mut PruneList {
+        &mut self.datastructures.prune_list
+    }
+
+    /// Search until there are no open nodes left.
+    pub fn search(&mut self) {
+        self.search_with_prune_condition(|_, _| false);
+    }
+
+    /// Search until there are no open nodes left, pruning nodes that fulfil a condition.
+    ///
+    /// `prune_condition` is called for each generated node, including root nodes, before it is inserted into the prune list.
+    /// If it returns true, then the node is discarded.
+    /// Hence, it is never expanded and does not appear in the results of the search.
+    pub fn search_with_prune_condition(
+        &mut self,
+        mut prune_condition: impl FnMut(&Context, &Node) -> bool,
+    ) {
+        let mut prune_list = ConditionallyPruningPruneList {
+            prune_list: &mut self.datastructures.prune_list,
+            context: &self.context,
+            prune_condition: &mut prune_condition,
+        };
+
+        // Initialise with root nodes.
+        self.context.generate_root_nodes(&mut prune_list);
+
+        while let Some(indexed_node) = prune_list.prune_list.next() {
             // Generate successors of the node.
             self.context
-                .generate_successors(indexed_node.cloned(), &mut self.datastructures.prune_list);
+                .generate_successors(indexed_node.cloned(), &mut prune_list);
         }
+    }
+
+    /// Search until there are no open nodes left, pruning nodes that exceed the cost limit.
+    ///
+    /// A node exceeds the cost limit if its cost does not dominate `cost_limit`.
+    /// For example, with two criteria and a cost limit of `(5, 5)`, a node with cost `(5, 5)` is kept,
+    /// but nodes with costs `(6, 5)` or `(4, 6)` are pruned.
+    ///
+    /// Note that the limit applies to all nodes, not only to targets.
+    /// If the costs can decrease along an edge, then nodes within the limit that are only reachable
+    /// via nodes exceeding the limit are not found.
+    pub fn search_until_cost_limit(
+        &mut self,
+        cost_limit: &<Context::Node as MulticriteriaDijkstraNode>::Cost,
+    ) {
+        self.search_with_prune_condition(|_, node| !node.cost().dominates(cost_limit));
     }
 
     pub fn iter_costs<'this>(
@@ -147,6 +189,14 @@ impl<PruneList: MulticriteriaDijkstraPruneList> MulticriteriaDijkstraDatastructu
     pub fn reset(&mut self) {
         self.prune_list.clear();
     }
+
+    pub fn prune_list(&self) -> &PruneList {
+        &self.prune_list
+    }
+
+    pub fn prune_list_mut(&mut self) -> &mut PruneList {
+        &mut self.prune_list
+    }
 }
 
 impl<PruneList: MulticriteriaDijkstraPruneList> Default
@@ -155,6 +205,64 @@ impl<PruneList: MulticriteriaDijkstraPruneList> Default
     fn default() -> Self {
         Self {
             prune_list: PruneList::default(),
+        }
+    }
+}
+
+/// Wraps a prune list and discards nodes that fulfil the prune condition before inserting them.
+struct ConditionallyPruningPruneList<
+    'prune_list,
+    'context,
+    'prune_condition,
+    PruneList,
+    Context,
+    PruneCondition,
+> {
+    prune_list: &'prune_list mut PruneList,
+    context: &'context Context,
+    prune_condition: &'prune_condition mut PruneCondition,
+}
+
+impl<
+    PruneList: MulticriteriaDijkstraPruneList,
+    Context,
+    PruneCondition: FnMut(&Context, &PruneList::Node) -> bool,
+> Extend<NodeWithOptionalPredecessorAndIsTarget<PruneList::Node, PruneList::Index>>
+    for ConditionallyPruningPruneList<'_, '_, '_, PruneList, Context, PruneCondition>
+{
+    fn extend<
+        T: IntoIterator<
+            Item = NodeWithOptionalPredecessorAndIsTarget<PruneList::Node, PruneList::Index>,
+        >,
+    >(
+        &mut self,
+        iter: T,
+    ) {
+        for node in iter {
+            if !(self.prune_condition)(self.context, &node.node) {
+                self.prune_list.insert(node);
+            }
+        }
+    }
+}
+
+impl<
+    PruneList: MulticriteriaDijkstraPruneList,
+    Context,
+    PruneCondition: FnMut(&Context, &PruneList::Node) -> bool,
+> Extend<NodeWithIsTarget<PruneList::Node>>
+    for ConditionallyPruningPruneList<'_, '_, '_, PruneList, Context, PruneCondition>
+{
+    fn extend<T: IntoIterator<Item = NodeWithIsTarget<PruneList::Node>>>(&mut self, iter: T) {
+        for NodeWithIsTarget { node, is_target } in iter {
+            if !(self.prune_condition)(self.context, &node) {
+                self.prune_list
+                    .insert(NodeWithOptionalPredecessorAndIsTarget {
+                        node,
+                        predecessor_index: None,
+                        is_target,
+                    });
+            }
         }
     }
 }

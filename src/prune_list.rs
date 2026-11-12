@@ -1,13 +1,13 @@
 use crate::node::MulticriteriaDijkstraNode;
 
 /// A "queue" for a multicriteria Dijkstra search.
-/// 
+///
 /// Since in multicriteria Dijkstra, there is no total ordering of the nodes, this cannot be a simple priority queue.
 /// Instead, this list should return nodes in arbitrary order until there are none left.
 /// To avoid searching the whole search space, nodes are pruned based on two rules.
 /// * If a node with the same identifier dominates a node, then the dominated node is pruned.
 /// * If a node is dominated by any other node that represents a target, then the node is pruned.
-/// 
+///
 /// The `is_target` flag of nodes must be dependent only on the identifier of the node.
 /// In other words, two nodes with the same identifier must have the same `is_target` value.
 pub trait MulticriteriaDijkstraPruneList:

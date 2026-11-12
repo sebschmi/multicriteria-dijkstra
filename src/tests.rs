@@ -424,3 +424,80 @@ fn minimum_hop_alignment_4() {
     actual_paths.sort_unstable();
     assert_eq!(actual_paths, expected_paths);
 }
+
+#[test]
+fn search_with_prune_condition_discards_nodes() {
+    let context = Context {
+        sequence_a: b"GG".to_vec(),
+        sequence_b: b"TT".to_vec(),
+    };
+    let mut dijkstra = MulticriteriaDijkstra::<PruneList, _>::new(context);
+    let mut pruned_count = 0;
+    dijkstra.search_with_prune_condition(|_, node| {
+        let prune = node.cost.hops >= 1;
+        pruned_count += usize::from(prune);
+        prune
+    });
+
+    // Only the root is kept, and its three successors are pruned.
+    let prune_list = dijkstra.prune_list();
+    assert_eq!(prune_list.nodes.len(), 1);
+    assert_eq!(prune_list.nodes[0].node.cost, Cost { hops: 0, cost: 0 });
+    assert_eq!(pruned_count, 3);
+}
+
+#[test]
+fn search_with_prune_condition_never_pruning_equals_search() {
+    let context = || Context {
+        sequence_a: b"GAG".to_vec(),
+        sequence_b: b"TA".to_vec(),
+    };
+    let target_identifier = Identifier {
+        position_a: 3,
+        position_b: 2,
+    };
+
+    let mut expected = MulticriteriaDijkstra::<PruneList, _>::new(context());
+    expected.search();
+    let mut expected_costs: Vec<_> = expected.iter_costs(&target_identifier).cloned().collect();
+    expected_costs.sort_unstable();
+
+    let mut actual = MulticriteriaDijkstra::<PruneList, _>::new(context());
+    actual.search_with_prune_condition(|_, _| false);
+    let mut actual_costs: Vec<_> = actual.iter_costs(&target_identifier).cloned().collect();
+    actual_costs.sort_unstable();
+
+    assert_eq!(actual_costs, expected_costs);
+    assert_eq!(
+        actual.prune_list().nodes.len(),
+        expected.prune_list().nodes.len()
+    );
+}
+
+#[test]
+fn search_until_cost_limit() {
+    let context = Context {
+        sequence_a: b"GGGG".to_vec(),
+        sequence_b: b"TTTT".to_vec(),
+    };
+    let cost_limit = Cost { hops: 6, cost: 10 };
+    let mut dijkstra = MulticriteriaDijkstra::<PruneList, _>::new(context);
+    dijkstra.search_until_cost_limit(&cost_limit);
+
+    // Of the Pareto front (4, 12), (5, 11), (6, 10), (7, 9), (8, 8), only (6, 10) is within the limit.
+    let target_identifier = Identifier {
+        position_a: 4,
+        position_b: 4,
+    };
+    let actual_costs: Vec<_> = dijkstra.iter_costs(&target_identifier).cloned().collect();
+    assert_eq!(actual_costs, std::slice::from_ref(&cost_limit));
+
+    // No node exceeding the limit was inserted.
+    assert!(
+        dijkstra
+            .prune_list()
+            .nodes
+            .iter()
+            .all(|node| node.node.cost.dominates(&cost_limit))
+    );
+}
